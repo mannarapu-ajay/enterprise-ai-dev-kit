@@ -40,14 +40,18 @@ class VersionManager:
         ai_dev_kit: str,
         enterprise_skills: str,
         workspace_url: str = "",
+        compute: dict | None = None,
     ) -> None:
-        self.write({
+        data: dict = {
             "enterprise_adk": enterprise_adk,
             "ai_dev_kit": ai_dev_kit,
             "enterprise_skills": enterprise_skills,
             "databricks_workspace": workspace_url,
             "installed_at": _now_iso(),
-        })
+        }
+        if compute:
+            data["compute"] = compute
+        self.write(data)
 
     def update_field(self, **kwargs: str) -> None:
         current = self.read()
