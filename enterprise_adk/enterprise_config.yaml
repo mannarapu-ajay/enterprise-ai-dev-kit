@@ -1,0 +1,35 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Enterprise AI Dev Kit — Package Configuration
+#
+# This file lives INSIDE the package.
+# The enterprise team edits this once before distributing their fork.
+# Data engineers never touch this file — they just install and run.
+# ─────────────────────────────────────────────────────────────────────────────
+
+enterprise:
+  name: enterprise            # Change to your org 
+  display_name: McCain    # Shown in banners: "Welcome to McCain's Enterprise AI Dev Kit!"
+  cli_command: mccain     # Binary alias: enterprise-adk → mccain-adk
+
+# ── Upstream ai-dev-kit ───────────────────────────────────────────────────────
+ai_dev_kit:
+  repo: https://github.com/databricks-solutions/ai-dev-kit.git
+  # version: main               # Pin to a tag: v0.1.5, v0.1.6, etc.
+  version: v0.1.4              # Pin to a tag: v0.1.5, v0.1.6, etc.
+
+# ── Enterprise skills source ──────────────────────────────────────────────────
+# Option A: Bundled (default) — skills ship inside this package under enterprise_skills/
+# skills:
+#   source: bundled
+
+# Option B: Git repository
+# skills:
+#   source: git
+#   repo: https://github.com/your-org/enterprise-skills.git
+#   ref: v2.3.0
+#   path: ""             # sub-directory inside repo, leave empty for root
+
+# Option C: Local path (useful in monorepo setups)
+skills:
+  source: local
+  path: /Users/ajaymannarapu/Blackstraw/ADM/week2/enterprise-ai-dev-kit/enterprise_skills

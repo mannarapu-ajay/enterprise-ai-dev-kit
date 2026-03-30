@@ -1,0 +1,23 @@
+databricks:
+  workspaces:
+    - name: Growth
+      url:
+        dev: https://adb-982288893326755.15.azuredatabricks.net
+    - name: Supply Chain
+      url:
+        dev: https://adb-1534255211069001.1.azuredatabricks.net
+    - name: Finance
+      url:
+        dev: https://adb-3107134495216511.11.azuredatabricks.net
+    - name: Agriculture
+      url:
+        dev: https://adb-54001242538101.1.azuredatabricks.net
+    - name: HR
+      url:
+        dev: https://adb-2199059861738382.2.azuredatabricks.net
+    - name: Procurement
+      url:
+        dev: https://adb-360325603937068.8.azuredatabricks.net
+    - name: EDP
+      url:
+        dev: https://adb-849096460664268.8.azuredatabricks.net
