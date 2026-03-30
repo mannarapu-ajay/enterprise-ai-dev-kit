@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -55,6 +57,12 @@ def update_repo(version: str = "main") -> str | None:
 
 # ── internal helpers ──────────────────────────────────────────────────────────
 
+def _force_remove_readonly(func, path, _exc_info) -> None:  # noqa: ANN001
+    """onerror handler for shutil.rmtree: clear read-only bit and retry (Windows git objects)."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 def _clone_or_update_repo(version: str = "main", *, force: bool = False) -> None:
     from enterprise_adk.config.loader import load_config
     repo_url = load_config().ai_dev_kit.repo
@@ -67,7 +75,7 @@ def _clone_or_update_repo(version: str = "main", *, force: bool = False) -> None
         return
 
     if REPO_DIR.exists():
-        shutil.rmtree(REPO_DIR)
+        shutil.rmtree(REPO_DIR, onerror=_force_remove_readonly)
 
     _git([
         "clone", "-q", "--depth", "1",
