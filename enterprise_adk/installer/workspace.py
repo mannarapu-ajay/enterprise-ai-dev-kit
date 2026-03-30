@@ -11,6 +11,7 @@ def create(
     project_root: Path,
     enterprise_name: str = "enterprise",
     workspace_url: str = "",
+    compute: dict | None = None,
 ) -> None:
     """Create directory structure and starter files. Idempotent."""
     state_dir = f".{enterprise_name}-adk"
@@ -18,7 +19,7 @@ def create(
     _write_gitignore(project_root, state_dir)
     _write_generated_readme(project_root)
     _write_starter_template(project_root, enterprise_name)
-    _write_metadata(project_root, state_dir, enterprise_name, workspace_url)
+    _write_metadata(project_root, state_dir, enterprise_name, workspace_url, compute)
 
 
 def _make_dirs(root: Path, state_dir: str) -> None:
@@ -79,7 +80,13 @@ def _write_starter_template(root: Path, enterprise_name: str) -> None:
         )
 
 
-def _write_metadata(root: Path, state_dir: str, enterprise_name: str, workspace_url: str) -> None:
+def _write_metadata(
+    root: Path,
+    state_dir: str,
+    enterprise_name: str,
+    workspace_url: str,
+    compute: dict | None = None,
+) -> None:
     meta_path = root / state_dir / "metadata.json"
     now = datetime.now(timezone.utc).isoformat()
     metadata: dict = {
@@ -88,6 +95,8 @@ def _write_metadata(root: Path, state_dir: str, enterprise_name: str, workspace_
         "project_root": str(root),
         "created_at": now,
     }
+    if compute:
+        metadata["compute"] = compute
     if meta_path.exists():
         try:
             existing = json.loads(meta_path.read_text(encoding="utf-8"))

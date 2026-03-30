@@ -24,6 +24,7 @@ import questionary
 import typer
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Confirm, Prompt
 from rich.rule import Rule
 from rich.table import Table
@@ -91,27 +92,31 @@ def init(
     _banner(cfg)
 
     # ── Step 1: Project directory ─────────────────────────────────────────────
-    _step(1, 6, "Project Directory")
+    _step(1, 7, "Project Directory")
     project_root = _resolve_path(path)
     state_dir    = project_root / _STATE_DIR
     skills_dir   = project_root / _CLAUDE_DIR / "skills"
 
     # ── Step 2: Prerequisites ─────────────────────────────────────────────────
-    _step(2, 6, "Prerequisites")
+    _step(2, 7, "Prerequisites")
     if not check_and_fix():
         console.print("\n  [red]Fix the above issues and run init again.[/red]")
         raise typer.Exit(1)
 
     # ── Step 3: Workspace & profile selection + OAuth initiation ──────────────
-    _step(3, 6, "Databricks Workspace & Profile")
+    _step(3, 7, "Databricks Workspace & Profile")
     workspace_url, profile = _select_workspace_and_login(auth)
 
     # ── Step 4: Authentication confirmation + CA certs ────────────────────────
-    _step(4, 6, "Authentication")
+    _step(4, 7, "Authentication")
     _confirm_auth_and_certs(certs, workspace_url, profile)
 
-    # ── Step 5: MCP server + skills ───────────────────────────────────────────
-    _step(5, 6, "MCP Server + Skills")
+    # ── Step 5: Compute configuration ─────────────────────────────────────────
+    _step(5, 7, "Compute Configuration")
+    compute = _select_compute(auth, profile)
+
+    # ── Step 6: MCP server + skills ───────────────────────────────────────────
+    _step(6, 7, "MCP Server + Skills")
     _run_mcp_step(mcp, project_root, profile, version=cfg.ai_dev_kit.version)
 
     mgr    = SkillManager(skills_dir, state_dir)
@@ -121,12 +126,13 @@ def init(
         f"  +  {len(result['enterprise'])} enterprise skill(s)"
     )
 
-    # ── Step 6: Workspace + version lock ──────────────────────────────────────
-    _step(6, 6, "Workspace + Version Lock")
+    # ── Step 7: Workspace + version lock ──────────────────────────────────────
+    _step(7, 7, "Workspace + Version Lock")
     workspace.create(
         project_root,
         enterprise_name=cfg.enterprise.name,
         workspace_url=workspace_url,
+        compute=compute,
     )
     console.print("  [green]✓[/green] src/generated/ , instruction-templates/ , .enterprise-adk/")
 
@@ -136,6 +142,7 @@ def init(
         ai_dev_kit=cfg.ai_dev_kit.version,
         enterprise_skills=cfg.skills.ref if cfg.skills else "bundled",
         workspace_url=workspace_url,
+        compute=compute,
     )
     console.print("  [green]✓[/green] version.lock written")
 
@@ -355,6 +362,84 @@ def _select_workspace_and_login(auth) -> tuple[str, str]:
     return workspace_url, profile
 
 
+def _select_compute(auth, profile: str) -> dict:
+    """Step 5: Choose compute type and configure cluster details."""
+    _COMPUTE_ALL_PURPOSE = "All Purpose Compute"
+    _COMPUTE_SERVERLESS  = "Serverless"
+    _COMPUTE_JOB_CLUSTER = "Job Cluster"
+
+    choice = questionary.select(
+        "What compute will you use for asset bundles?",
+        choices=[_COMPUTE_ALL_PURPOSE, _COMPUTE_SERVERLESS, _COMPUTE_JOB_CLUSTER],
+        style=_Q_STYLE,
+    ).ask()
+
+    if choice == _COMPUTE_ALL_PURPOSE:
+        with Progress(SpinnerColumn(), TextColumn("{task.description}"), transient=True, console=console) as prog:
+            prog.add_task("  Fetching clusters from workspace…", total=None)
+            clusters = auth.list_clusters(profile)
+        if not clusters:
+            console.print("  [yellow]![/yellow] No clusters found — enter cluster ID manually.")
+            cluster_id = Prompt.ask(
+                "  [bold]Cluster ID[/bold]", default="", console=console
+            ).strip()
+            return {"type": "all_purpose", "cluster_id": cluster_id, "cluster_name": ""}
+
+        cluster_labels = [
+            f"{c['name']}  [{c['state']}]  ({c['id']})" for c in clusters
+        ]
+        selected_label = questionary.select(
+            "Choose a cluster:",
+            choices=cluster_labels,
+            style=_Q_STYLE,
+        ).ask()
+
+        if selected_label:
+            idx     = cluster_labels.index(selected_label)
+            cluster = clusters[idx]
+            console.print(f"  [green]✓[/green] Cluster: {cluster['name']}  ({cluster['id']})")
+            return {"type": "all_purpose", "cluster_id": cluster["id"], "cluster_name": cluster["name"]}
+        return {"type": "all_purpose", "cluster_id": "", "cluster_name": ""}
+
+    if choice == _COMPUTE_SERVERLESS:
+        console.print("  [green]✓[/green] Serverless compute selected")
+        return {"type": "serverless"}
+
+    # Job Cluster — prompt with defaults, allow overwrite
+    console.print("  [dim]Configure job cluster spec (press Enter to accept defaults):[/dim]")
+    console.print()
+    spark_version = Prompt.ask(
+        "  [bold]Spark version[/bold]",
+        default="15.4.x-scala2.12",
+        console=console,
+    ).strip()
+    node_type_id = Prompt.ask(
+        "  [bold]Node type ID[/bold]",
+        default="Standard_DS3_v2",
+        console=console,
+    ).strip()
+    num_workers_raw = Prompt.ask(
+        "  [bold]Number of workers[/bold]",
+        default="2",
+        console=console,
+    ).strip()
+    try:
+        num_workers = int(num_workers_raw)
+    except ValueError:
+        num_workers = 2
+
+    console.print(
+        f"  [green]✓[/green] Job cluster: {node_type_id}, "
+        f"{spark_version}, {num_workers} workers"
+    )
+    return {
+        "type": "job_cluster",
+        "spark_version": spark_version,
+        "node_type_id": node_type_id,
+        "num_workers": num_workers,
+    }
+
+
 def _confirm_auth_and_certs(certs, workspace_url: str, profile: str) -> None:
     """Step 4: Confirm authentication result and configure CA certs."""
     if workspace_url:
@@ -400,6 +485,22 @@ def _resolve_project(path: Optional[Path]) -> tuple[Path, Path, Path]:
     return project_root, state_dir, skills_dir
 
 
+def _format_compute(compute: dict) -> str:
+    t = compute.get("type", "")
+    if t == "all_purpose":
+        name = compute.get("cluster_name") or compute.get("cluster_id", "")
+        cid  = compute.get("cluster_id", "")
+        return f"All Purpose — {name} ({cid})" if name != cid else f"All Purpose — {cid}"
+    if t == "serverless":
+        return "Serverless"
+    if t == "job_cluster":
+        return (
+            f"Job Cluster — {compute.get('node_type_id', '')}, "
+            f"{compute.get('num_workers', '')} workers"
+        )
+    return t or "not set"
+
+
 def _print_summary(
     project_root: Path,
     skills_dir: Path,
@@ -414,11 +515,14 @@ def _print_summary(
     db_skills  = [s for s in installed if s.startswith("databricks") or s.startswith("spark")]
     ent_skills = [s for s in installed if s.startswith("enterprise")]
 
+    compute_str = _format_compute(lock.get("compute") or {})
+
     t = Table(show_header=False, box=None, padding=(0, 2))
     t.add_row("[dim]Project[/dim]",            str(project_root))
     t.add_row("[dim]Enterprise[/dim]",         _ENT_DISP)
     t.add_row("[dim]CLI[/dim]",                cfg.adk_name)
     t.add_row("[dim]Workspace[/dim]",          workspace_url or "[dim]not set[/dim]")
+    t.add_row("[dim]Compute[/dim]",            compute_str)
     t.add_row("[dim]Databricks skills[/dim]",  f"{len(db_skills)} installed")
     t.add_row("[dim]Enterprise skills[/dim]",  ", ".join(ent_skills) or "none")
     t.add_row("[dim]ai-dev-kit version[/dim]", lock.get("ai_dev_kit", cfg.ai_dev_kit.version))
